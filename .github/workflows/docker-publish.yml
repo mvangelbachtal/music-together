@@ -70,6 +70,20 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+      - name: Make container package public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE_NAME: ${{ github.event.repository.name }}
+        run: |
+          owner_type=$(gh api "/users/$OWNER" --jq '.type')
+          if [ "$owner_type" = "Organization" ]; then
+            package_path="/orgs/$OWNER/packages/container/$PACKAGE_NAME"
+          else
+            package_path="/user/packages/container/$PACKAGE_NAME"
+          fi
+          gh api --method PATCH "$package_path" -f visibility=public
+
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v') || startsWith(inputs.release_tag, 'v')
         uses: softprops/action-gh-release@v2
