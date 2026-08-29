@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.venv/
+data/*
+!data/.gitkeep
+*.db
+__pycache__/
+.pytest_cache/
+.DS_Store
+compose.override.yml
+compose.override.yaml

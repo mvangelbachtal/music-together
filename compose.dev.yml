@@ -1,0 +1,24 @@
+services:
+  music-together:
+    build: .
+    image: music-together:dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      DATABASE_PATH: /data/music-together.db
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_AUTHORIZATION_URL: ${OIDC_AUTHORIZATION_URL:-}
+      OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-}
+      OIDC_USERINFO_URL: ${OIDC_USERINFO_URL:-}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:8000/auth/callback}
+      OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile}
+      REQUIRE_OIDC_AUTH: ${REQUIRE_OIDC_AUTH:-0}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      SPONSORBLOCK_ENABLED: ${SPONSORBLOCK_ENABLED:-1}
+      SPONSORBLOCK_CATEGORIES: ${SPONSORBLOCK_CATEGORIES:-sponsor,selfpromo,interaction,intro,outro,preview,filler,music_offtopic}
+      PLAYBACK_OWNER: ${PLAYBACK_OWNER:-host}
