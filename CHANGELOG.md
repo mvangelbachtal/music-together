@@ -8,9 +8,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 Initial development version.
-
-## v0.1.0 (2026-08-29)
-
-### Feat
-
-- initial implementation
