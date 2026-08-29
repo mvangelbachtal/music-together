@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Music Together</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main id="app">
+    <header class="brand"><span class="brand-mark">MT</span><span>Music Together</span></header>
+    <section id="landing" class="panel">
+      <h1>Make the room<br><em>sound like you.</em></h1>
+      <label class="switch"><input id="kiosk-playback" type="checkbox"><span>Play audio from the kiosk browser</span></label>
+      <button id="create">Start a session</button>
+      <p id="status" class="status" role="status"></p>
+      <div id="session-links" class="links hidden">
+        <h2>Session ready</h2>
+        <p>Keep the host link private. Share the guest link with the party and open the kiosk link on the display.</p>
+        <label>Host <input id="host-url" readonly><button type="button" data-copy="host-url">COPY</button></label>
+        <label>Guest <input id="guest-url" readonly><button type="button" data-copy="guest-url">COPY</button></label>
+        <label>Kiosk <input id="kiosk-url" readonly><button type="button" data-copy="kiosk-url">COPY</button></label>
+        <button id="open-host" type="button">Open host console</button>
+      </div>
+    </section>
+    <section id="party" class="panel hidden">
+      <div class="now"><span id="playing-kind">ON AIR</span><h2 id="playing">Waiting for requests</h2></div>
+      <form id="search-form"><input id="search-query" autocomplete="off" placeholder="Search YouTube"><button>SEARCH</button><button id="clear-search" class="button-secondary" type="button">CLEAR</button></form>
+      <ol id="results"></ol>
+      <form id="add-form"><input id="url" required placeholder="YouTube or YouTube Music URL"><input id="title" required placeholder="Song title"><button>Add song</button></form>
+      <h3>UP NEXT</h3><ol id="queue"></ol>
+    </section>
+    <section id="host" class="panel hidden">
+      <div class="now"><span>HOST CONSOLE</span><h2>Playback desk</h2></div>
+      <div id="player"></div>
+      <div class="controls"><button id="pause">PAUSE</button><button id="stop">STOP</button><button id="resume">RESUME</button><button id="skip-current">SKIP</button><label class="volume">VOLUME <input id="volume" type="range" min="0" max="100" value="80"></label></div>
+      <p id="host-status" class="status" role="status"></p>
+      <label>Fallback playlist <input id="fallback" placeholder="YouTube playlist URL"></label>
+      <button id="save-fallback">Save fallback</button>
+      <h3>QUEUE CONTROL</h3><ol id="host-queue"></ol>
+      <div id="host-links" class="links">
+        <h3>SHARE THIS SESSION</h3>
+        <label>Guest <input id="host-guest-url" readonly><button type="button" data-copy="host-guest-url">COPY</button></label>
+        <label>Kiosk <input id="host-kiosk-url" readonly><button type="button" data-copy="host-kiosk-url">COPY</button></label>
+      </div>
+      <button id="end-session" class="button-danger">END SESSION</button>
+    </section>
+    <section id="kiosk" class="panel hidden">
+      <div class="now kiosk-now"><div><span id="kiosk-playing-kind">NOW PLAYING</span><h2 id="kiosk-playing">Waiting for requests</h2></div><div class="qr-wrap"><img id="qr" alt="Guest link QR code"><span>SCAN TO ADD A SONG</span></div></div>
+      <div class="kiosk-controls"><span id="wake-status" class="status"></span></div>
+      <div class="kiosk-grid"><div class="kiosk-stage"><div id="kiosk-video" class="kiosk-video"></div></div><div class="kiosk-queue"><h3>UP NEXT</h3><ol id="kiosk-queue"></ol></div></div>
+    </section>
+  </main>
+  <script src="/static/app.js?v=10"></script>
+</body>
+</html>
