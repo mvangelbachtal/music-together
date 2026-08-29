@@ -1,6 +1,6 @@
 [project]
 name = "music-together"
-version = "0.0.0"
+version = "0.1.0"
 description = "A collaborative party music voting player"
 requires-python = ">=3.12"
 dependencies = [
@@ -30,6 +30,7 @@ select = ["E4", "E7", "E9", "F", "I", "UP"]
 name = "cz_conventional_commits"
 version = "0.0.0"
 version_provider = "pep621"
+version_files = ["compose.yml"]
 tag_format = "v$version"
 update_changelog_on_bump = true
 changelog_file = "CHANGELOG.md"
