@@ -452,6 +452,23 @@ def add_playlist(token: str, request: PlaylistRequest, google_subject: str | Non
     return session_payload(host_session(token, google_subject))
 
 
+@app.post("/api/host/{token}/songs")
+def add_host_song(token: str, request: SongRequest, google_subject: str | None = Cookie(default=None, alias="oidc_subject")) -> dict:
+    session = host_session(token, google_subject)
+    identifier = video_id(request.url)
+    host_voter = f"host:{session['id']}"
+    with connection() as database:
+        item_id, state, created = enqueue_video(database, session["id"], identifier, request.title, request.artist, f"https://i.ytimg.com/vi/{identifier}/hqdefault.jpg")
+        if created:
+            database.execute("INSERT INTO votes(queue_item_id, guest_id) VALUES (?, ?)", (item_id, host_voter))
+        elif state == "queued":
+            try:
+                database.execute("INSERT INTO votes(queue_item_id, guest_id) VALUES (?, ?)", (item_id, host_voter))
+            except sqlite3.IntegrityError:
+                pass
+    return session_payload(host_session(token, google_subject))
+
+
 @app.post("/api/sessions/{token}/queue/{item_id}/vote")
 def vote(response: Response, token: str, item_id: int, guest_id: str | None = Cookie(default=None)) -> dict:
     session = token_session(token, "guest")

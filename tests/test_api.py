@@ -97,6 +97,29 @@ def test_song_can_be_requested_again_after_it_already_played(tmp_path, monkeypat
         assert any(item["video_id"] == "removable" and item["votes"] == 1 for item in re_removed["queue"])
 
 
+def test_host_can_add_individual_songs(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.db"))
+    import app.main as main
+
+    main.DATABASE_PATH = str(tmp_path / "test.db")
+    importlib.reload(main)
+    with TestClient(main.app) as client:
+        session = client.post("/api/sessions").json()
+        guest_token = session["guest_url"].rsplit("/", 1)[-1]
+        host_token = session["host_url"].rsplit("/", 1)[-1]
+
+        added = client.post(f"/api/host/{host_token}/songs", json={"url": "https://youtu.be/host-add", "title": "Host Add"}).json()
+        item = next(item for item in added["queue"] if item["video_id"] == "host-add")
+        assert item["votes"] == 1
+
+        guest_view = client.get(f"/api/sessions/{guest_token}").json()
+        assert any(item["video_id"] == "host-add" for item in guest_view["queue"])
+
+        repeated = client.post(f"/api/host/{host_token}/songs", json={"url": "https://youtu.be/host-add", "title": "Host Add"}).json()
+        repeated_item = next(item for item in repeated["queue"] if item["video_id"] == "host-add")
+        assert repeated_item["votes"] == 1
+
+
 def test_playlist_bulk_add_uses_zero_votes_and_ranks_below_requests(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.db"))
     monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")

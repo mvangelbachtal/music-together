@@ -4,6 +4,7 @@ const host = document.querySelector('#host');
 const kiosk = document.querySelector('#kiosk');
 const queue = document.querySelector('#queue');
 const results = document.querySelector('#results');
+const hostResults = document.querySelector('#host-results');
 let sessionToken = location.pathname.split('/').filter(Boolean).at(-1);
 const isHost = location.pathname.startsWith('/host/');
 const isKiosk = location.pathname.startsWith('/kiosk/');
@@ -163,11 +164,21 @@ function renderKioskQueue() {
   if (!kioskQueue.clientHeight) return;
   while (kioskQueue.scrollHeight > kioskQueue.clientHeight && kioskQueue.lastElementChild) kioskQueue.lastElementChild.remove();
 }
-async function addResult(item) {
-  const response = await fetch(`/api/sessions/${sessionToken}/songs`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:`https://youtu.be/${item.video_id}`, title:item.title, artist:item.artist})});
+async function addResult(item, host = false) {
+  const endpoint = host ? `/api/host/${sessionToken}/songs` : `/api/sessions/${sessionToken}/songs`;
+  const response = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:`https://youtu.be/${item.video_id}`, title:item.title, artist:item.artist})});
   const data = await response.json();
   if (!response.ok) return showStatus(data.detail || 'Could not add song', true);
-  guestId = data.guest_id; localStorage.setItem('music-together-guest', guestId); render(data); showStatus('Added to the queue.');
+  if (!host) { guestId = data.guest_id; localStorage.setItem('music-together-guest', guestId); }
+  render(data); showStatus('Added to the queue.');
+}
+function renderSearchResults(list, items, host) {
+  list.replaceChildren(...(items || []).map(item => {
+    const row = document.createElement('li'); row.className = 'queue-item search-result';
+    row.innerHTML = `<img class="thumb" src="${item.thumbnail || `https://i.ytimg.com/vi/${item.video_id}/hqdefault.jpg`}" alt=""><span><strong>${item.title}</strong><br><small>${item.artist}</small></span><button type="button">ADD</button>`;
+    row.querySelector('button').onclick = () => addResult(item, host);
+    return row;
+  }));
 }
 function renderHost(data) {
   landing.classList.add('hidden'); kiosk.classList.add('hidden'); host.classList.remove('hidden'); party.classList.add('hidden');
@@ -233,9 +244,18 @@ document.querySelector('#create').onclick = async () => {
   document.querySelector('#session-links').classList.remove('hidden');
   showStatus('Session created.');
 };
-document.querySelector('#search-form').onsubmit = async event => { event.preventDefault(); const response = await fetch('/api/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:document.querySelector('#search-query').value})}); const data = await response.json(); if (!response.ok) return showStatus(data.detail || 'Search unavailable', true); results.replaceChildren(...(data.results || []).map(item => { const row = document.createElement('li'); row.className = 'queue-item search-result'; row.innerHTML = `<img class="thumb" src="${item.thumbnail || `https://i.ytimg.com/vi/${item.video_id}/hqdefault.jpg`}" alt=""><span><strong>${item.title}</strong><br><small>${item.artist}</small></span><button type="button">ADD</button>`; row.querySelector('button').onclick = () => addResult(item); return row; })); };
+document.querySelector('#search-form').onsubmit = async event => { event.preventDefault(); const response = await fetch('/api/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:document.querySelector('#search-query').value})}); const data = await response.json(); if (!response.ok) return showStatus(data.detail || 'Search unavailable', true); renderSearchResults(results, data.results, false); };
 document.querySelector('#clear-search').onclick = () => { document.querySelector('#search-query').value = ''; results.replaceChildren(); document.querySelector('#search-query').focus(); };
+document.querySelector('#host-search-form').onsubmit = async event => { event.preventDefault(); const response = await fetch('/api/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:document.querySelector('#host-search-query').value})}); const data = await response.json(); if (!response.ok) return showStatus(data.detail || 'Search unavailable', true); renderSearchResults(hostResults, data.results, true); };
+document.querySelector('#host-clear-search').onclick = () => { document.querySelector('#host-search-query').value = ''; hostResults.replaceChildren(); document.querySelector('#host-search-query').focus(); };
 document.querySelector('#add-form').onsubmit = async event => { event.preventDefault(); const response = await fetch(`/api/sessions/${sessionToken}/songs`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:document.querySelector('#url').value, title:document.querySelector('#title').value})}); const data = await response.json(); guestId = data.guest_id; localStorage.setItem('music-together-guest', guestId); render(data); event.target.reset(); };
+document.querySelector('#host-add-form').onsubmit = async event => {
+  event.preventDefault();
+  const response = await fetch(`/api/host/${sessionToken}/songs`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:document.querySelector('#host-song-url').value, title:document.querySelector('#host-song-title').value})});
+  const data = await response.json();
+  if (!response.ok) return showStatus(data.detail || 'Could not add song', true);
+  render(data); event.target.reset(); showStatus('Added to the queue.');
+};
 document.querySelector('#playlist-form').onsubmit = async event => {
   event.preventDefault();
   const response = await fetch(`/api/host/${sessionToken}/playlist`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:document.querySelector('#playlist-url').value})});

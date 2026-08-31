@@ -35,6 +35,9 @@
       <div id="player"></div>
       <div class="controls"><button id="pause">PAUSE</button><button id="stop">STOP</button><button id="resume">RESUME</button><button id="skip-current">SKIP</button><label class="volume">VOLUME <input id="volume" type="range" min="0" max="100" value="80"></label></div>
       <p id="host-status" class="status" role="status"></p>
+      <form id="host-search-form"><input id="host-search-query" autocomplete="off" placeholder="Search YouTube"><button>SEARCH</button><button id="host-clear-search" class="button-secondary" type="button">CLEAR</button></form>
+      <ol id="host-results"></ol>
+      <form id="host-add-form"><input id="host-song-url" required placeholder="YouTube or YouTube Music URL"><input id="host-song-title" required placeholder="Song title"><button>Add song</button></form>
       <form id="playlist-form"><input id="playlist-url" required placeholder="YouTube playlist URL"><button>Add whole playlist</button></form>
       <h3>QUEUE CONTROL</h3><ol id="host-queue"></ol>
       <div id="host-links" class="links">
@@ -50,6 +53,6 @@
       <div class="kiosk-grid"><div class="kiosk-stage"><div id="kiosk-video" class="kiosk-video"></div></div><div class="kiosk-queue"><h3>UP NEXT</h3><ol id="kiosk-queue"></ol></div></div>
     </section>
   </main>
-  <script src="/static/app.js?v=11"></script>
+  <script src="/static/app.js?v=12"></script>
 </body>
 </html>
