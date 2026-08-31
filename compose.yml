@@ -1,6 +1,6 @@
 services:
   music-together:
-    image: ghcr.io/mvangelbachtal/music-together:${IMAGE_TAG:-v0.2.0}
+    image: ghcr.io/mvangelbachtal/music-together:${IMAGE_TAG:-v0.3.0}
     ports:
       - "8000:8000"
     volumes:
