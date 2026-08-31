@@ -10,7 +10,6 @@ const isKiosk = location.pathname.startsWith('/kiosk/');
 let guestId = localStorage.getItem('music-together-guest');
 let player;
 let currentItem;
-let fallbackPlaylist;
 let kioskPlayer;
 let wakeLock;
 let playbackOwner = 'host';
@@ -19,7 +18,6 @@ let kioskPlaybackRevision = -1;
 let latestData;
 let skipSegments = [];
 let skippedSegments = new Set();
-let fallbackRevision;
 let latestKioskQueue = [];
 let liveSocket;
 const extractToken = value => value.trim().split('/').filter(Boolean).at(-1);
@@ -104,7 +102,7 @@ setInterval(skipCurrentSegment, 500);
 
 function initHostPlayer() {
   if (!isHost || playbackOwner !== 'host' || player || !window.YT?.Player) return;
-    player = new YT.Player('player', {height:'100%', width:'100%', playerVars:{playsinline:1}, events:{onReady: () => { player.unMute(); if (currentItem) player.loadVideoById(currentItem.video_id); else if (latestData?.fallback_playlist) startFallback(player, latestData.fallback_playlist); if (latestData) applyTransport(latestData, true); }, onStateChange: onPlayerStateChange, onError: () => hostAction('playback-failure')}});
+    player = new YT.Player('player', {height:'100%', width:'100%', playerVars:{playsinline:1}, events:{onReady: () => { player.unMute(); if (currentItem) player.loadVideoById(currentItem.video_id); if (latestData) applyTransport(latestData, true); }, onStateChange: onPlayerStateChange, onError: () => hostAction('playback-failure')}});
 }
 if (isHost) {
   window.onYouTubeIframeAPIReady = initHostPlayer;
@@ -112,34 +110,20 @@ if (isHost) {
 }
 if (isKiosk) {
   window.onYouTubeIframeAPIReady = () => {
-    kioskPlayer = new YT.Player('kiosk-video', {height:'100%', width:'100%', playerVars:{playsinline:1, rel:0}, events:{onReady: () => { if (currentItem) kioskPlayer.loadVideoById(currentItem.video_id); else if (latestData?.fallback_playlist) startFallback(kioskPlayer, latestData.fallback_playlist); if (latestData) applyTransport(latestData, true); if (playbackOwner !== 'kiosk') kioskPlayer.mute(); }, onStateChange: event => { if (event.data === YT.PlayerState.ENDED) { if (playbackOwner === 'kiosk' && currentItem) fetch(`/api/kiosk/${sessionToken}/complete`, {method:'POST'}); else if (!currentItem && latestData?.fallback_playlist) startFallback(kioskPlayer, latestData.fallback_playlist); } }, onError: () => showStatus('Kiosk video unavailable', true)}});
+    kioskPlayer = new YT.Player('kiosk-video', {height:'100%', width:'100%', playerVars:{playsinline:1, rel:0}, events:{onReady: () => { if (currentItem) kioskPlayer.loadVideoById(currentItem.video_id); if (latestData) applyTransport(latestData, true); if (playbackOwner !== 'kiosk') kioskPlayer.mute(); }, onStateChange: event => { if (event.data === YT.PlayerState.ENDED && playbackOwner === 'kiosk' && currentItem) fetch(`/api/kiosk/${sessionToken}/complete`, {method:'POST'}); }, onError: () => showStatus('Kiosk video unavailable', true)}});
   };
   const script = document.createElement('script'); script.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(script);
 }
 
 function render(data) {
   const previousVideoId = currentItem?.video_id;
-  const fallbackActive = !data.playing && Boolean(data.fallback_playlist);
-  document.querySelector('#playing-kind').textContent = fallbackActive ? 'FALLBACK VIDEO' : 'ON AIR';
-  document.querySelector('#playing').textContent = data.playing?.title || (fallbackActive ? 'Fallback playlist' : 'Waiting for requests');
+  document.querySelector('#playing-kind').textContent = 'ON AIR';
+  document.querySelector('#playing').textContent = data.playing?.title || 'Waiting for requests';
   currentItem = data.playing;
   applyTransport(data);
   initHostPlayer();
-  if (fallbackActive && fallbackRevision === undefined) fallbackRevision = data.playback_revision;
-  if (!fallbackActive) fallbackRevision = undefined;
-  if (fallbackActive && fallbackRevision !== data.playback_revision) {
-    fallbackRevision = data.playback_revision;
-    const fallbackPlayer = playbackOwner === 'kiosk' ? kioskPlayer : player;
-    fallbackPlayer?.nextVideo?.();
-  }
   if (data.playing?.video_id && data.playing.video_id !== previousVideoId) loadSkipSegments(data.playing.video_id);
-  if (isHost && data.playing && data.playing.video_id !== previousVideoId && player?.loadVideoById) {
-    fallbackPlaylist = null;
-    player.loadVideoById(data.playing.video_id);
-  } else if (!data.playing && data.fallback_playlist && data.fallback_playlist !== fallbackPlaylist) {
-    const fallbackPlayer = playbackOwner === 'kiosk' ? kioskPlayer : player;
-    startFallback(fallbackPlayer, data.fallback_playlist);
-  }
+  if (isHost && data.playing && data.playing.video_id !== previousVideoId && player?.loadVideoById) player.loadVideoById(data.playing.video_id);
   queue.replaceChildren(...data.queue.map(item => {
     const row = document.createElement('li'); row.className = 'queue-item';
     row.innerHTML = `<span>${item.votes}</span><img class="thumb" src="${item.thumbnail}" alt=""><span><strong>${item.title}</strong><br><small>${item.artist}</small></span><button class="vote ${item.voted ? 'selected' : ''}" data-id="${item.id}">${item.voted ? 'VOTED - REMOVE' : 'VOTE'}</button>`;
@@ -151,9 +135,8 @@ function render(data) {
 }
 function renderKiosk(data) {
   landing.classList.add('hidden'); host.classList.add('hidden'); party.classList.add('hidden'); kiosk.classList.remove('hidden');
-  const fallbackActive = !data.playing && Boolean(data.fallback_playlist);
-  document.querySelector('#kiosk-playing-kind').textContent = fallbackActive ? 'FALLBACK VIDEO' : 'NOW PLAYING';
-  document.querySelector('#kiosk-playing').textContent = data.playing?.title || (fallbackActive ? 'Fallback playlist' : 'Waiting for requests');
+  document.querySelector('#kiosk-playing-kind').textContent = 'NOW PLAYING';
+  document.querySelector('#kiosk-playing').textContent = data.playing?.title || 'Waiting for requests';
   applyTransport(data);
   const kioskVideo = document.querySelector('#kiosk-video');
   if (data.playing?.video_id) {
@@ -191,7 +174,6 @@ function renderHost(data) {
   document.querySelector('#player').classList.toggle('hidden', data.playback_owner !== 'host');
   if (data.guest_url) document.querySelector('#host-guest-url').value = data.guest_url;
   if (data.kiosk_url) document.querySelector('#host-kiosk-url').value = data.kiosk_url;
-  document.querySelector('#fallback').value = data.fallback_playlist || '';
   const hostQueue = document.querySelector('#host-queue');
   hostQueue.replaceChildren(...data.queue.map(item => {
     const row = document.createElement('li'); row.className = 'queue-item';
@@ -231,22 +213,12 @@ setInterval(() => {
 }, 1000);
 async function onPlayerStateChange(event) {
   if (event.data !== YT.PlayerState.ENDED) return;
-  if (fallbackPlaylist && !currentItem) return;
   if (currentItem) {
     await hostAction('complete', currentItem.id);
     return;
   }
   const response = await fetch(`/api/host/${sessionToken}/next`, {method:'POST'});
-  const data = await response.json();
-  if (!data.playing) fallbackPlaylist = null;
-  render(data);
-}
-function startFallback(activePlayer, url) {
-  const match = url.match(/[?&]list=([^&]+)/);
-  if (!match || !activePlayer?.loadPlaylist) return;
-  fallbackPlaylist = url;
-  activePlayer.loadPlaylist({list: match[1], listType:'playlist'});
-  activePlayer.setShuffle(true);
+  render(await response.json());
 }
 let createdHostUrl;
 document.querySelector('#create').onclick = async () => {
@@ -264,7 +236,13 @@ document.querySelector('#create').onclick = async () => {
 document.querySelector('#search-form').onsubmit = async event => { event.preventDefault(); const response = await fetch('/api/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:document.querySelector('#search-query').value})}); const data = await response.json(); if (!response.ok) return showStatus(data.detail || 'Search unavailable', true); results.replaceChildren(...(data.results || []).map(item => { const row = document.createElement('li'); row.className = 'queue-item search-result'; row.innerHTML = `<img class="thumb" src="${item.thumbnail || `https://i.ytimg.com/vi/${item.video_id}/hqdefault.jpg`}" alt=""><span><strong>${item.title}</strong><br><small>${item.artist}</small></span><button type="button">ADD</button>`; row.querySelector('button').onclick = () => addResult(item); return row; })); };
 document.querySelector('#clear-search').onclick = () => { document.querySelector('#search-query').value = ''; results.replaceChildren(); document.querySelector('#search-query').focus(); };
 document.querySelector('#add-form').onsubmit = async event => { event.preventDefault(); const response = await fetch(`/api/sessions/${sessionToken}/songs`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:document.querySelector('#url').value, title:document.querySelector('#title').value})}); const data = await response.json(); guestId = data.guest_id; localStorage.setItem('music-together-guest', guestId); render(data); event.target.reset(); };
-document.querySelector('#save-fallback')?.addEventListener('click', async () => { const response = await fetch(`/api/host/${sessionToken}/fallback`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({playlist_url:document.querySelector('#fallback').value})}); if (response.ok) render(await response.json()); });
+document.querySelector('#playlist-form').onsubmit = async event => {
+  event.preventDefault();
+  const response = await fetch(`/api/host/${sessionToken}/playlist`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:document.querySelector('#playlist-url').value})});
+  const data = await response.json();
+  if (!response.ok) return showStatus(data.detail || 'Could not add playlist', true);
+  render(data); event.target.reset(); showStatus('Playlist added to the queue.');
+};
 document.querySelector('#pause')?.addEventListener('click', () => setTransport('paused'));
 document.querySelector('#stop')?.addEventListener('click', () => setTransport('stopped'));
 document.querySelector('#resume')?.addEventListener('click', () => setTransport('playing'));
@@ -279,11 +257,7 @@ function activateKioskPlayback() {
 document.addEventListener('click', () => {
   if (isKiosk && playbackOwner === 'kiosk') activateKioskPlayback();
 }, {once:false});
-document.querySelector('#skip-current')?.addEventListener('click', async () => {
-  if (currentItem) return hostAction('skip', currentItem.id);
-  const response = await fetch(`/api/host/${sessionToken}/fallback/skip`, {method:'POST'});
-  if (response.ok) render(await response.json());
-});
+document.querySelector('#skip-current')?.addEventListener('click', () => { if (currentItem) hostAction('skip', currentItem.id); });
 document.querySelector('#end-session')?.addEventListener('click', async () => { if (!confirm('End this party session?')) return; await fetch(`/api/host/${sessionToken}/end`, {method:'POST'}); location.href = '/'; });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') requestWakeLock(); });
 if (window.ResizeObserver) new ResizeObserver(renderKioskQueue).observe(document.querySelector('#kiosk-queue'));

@@ -2,6 +2,7 @@ import asyncio
 import io
 import json
 import os
+import re
 import secrets
 import sqlite3
 from contextlib import asynccontextmanager
@@ -63,7 +64,6 @@ def setup_database() -> None:
                 host_token TEXT NOT NULL UNIQUE,
                 guest_token TEXT NOT NULL UNIQUE,
                 kiosk_token TEXT NOT NULL UNIQUE,
-                fallback_playlist TEXT,
                 state TEXT NOT NULL DEFAULT 'active',
                 created_at TEXT NOT NULL,
                 last_host_seen TEXT NOT NULL,
@@ -122,6 +122,8 @@ def migrate_database() -> None:
             database.execute("ALTER TABLE sessions ADD COLUMN playback_owner TEXT NOT NULL DEFAULT 'host'")
         if "video_enabled" not in columns:
             database.execute("ALTER TABLE sessions ADD COLUMN video_enabled INTEGER NOT NULL DEFAULT 1")
+        if "fallback_playlist" in columns:
+            database.execute("ALTER TABLE sessions DROP COLUMN fallback_playlist")
 
 
 async def cleanup_sessions() -> None:
@@ -154,8 +156,8 @@ class SongRequest(BaseModel):
     artist: str = Field(default="YouTube selection", max_length=200)
 
 
-class FallbackRequest(BaseModel):
-    playlist_url: str = Field(default="", max_length=500)
+class PlaylistRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=500)
 
 
 class SearchRequest(BaseModel):
@@ -235,6 +237,66 @@ def video_id(url: str) -> str:
     raise HTTPException(status_code=422, detail="Use a YouTube or YouTube Music URL")
 
 
+def enqueue_video(database: sqlite3.Connection, session_id: int, identifier: str, title: str, artist: str, thumbnail: str) -> tuple[int, str, bool]:
+    """Insert a video, or reactivate its past (played/removed/skipped) row since video_id is unique per session."""
+    existing = database.execute(
+        "SELECT id, state FROM queue_items WHERE session_id = ? AND video_id = ?", (session_id, identifier)
+    ).fetchone()
+    if existing and existing["state"] in ("queued", "playing"):
+        return existing["id"], existing["state"], False
+    if existing:
+        database.execute(
+            "UPDATE queue_items SET state = 'queued', title = ?, artist = ?, thumbnail = ?, submitted_at = ? WHERE id = ?",
+            (title, artist, thumbnail, now(), existing["id"]),
+        )
+        database.execute("DELETE FROM votes WHERE queue_item_id = ?", (existing["id"],))
+        return existing["id"], "queued", True
+    cursor = database.execute(
+        "INSERT INTO queue_items(session_id, video_id, title, artist, thumbnail, submitted_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (session_id, identifier, title, artist, thumbnail, now()),
+    )
+    assert cursor.lastrowid is not None
+    return cursor.lastrowid, "queued", True
+
+
+def playlist_id(url: str) -> str:
+    match = re.search(r"[?&]list=([^&]+)", url)
+    if not match:
+        raise HTTPException(status_code=422, detail="Use a YouTube playlist URL")
+    return match.group(1)[:100]
+
+
+def fetch_playlist_videos(list_id: str) -> list[dict]:
+    if not YOUTUBE_API_KEY:
+        raise HTTPException(status_code=503, detail="Playlist import is unavailable until YOUTUBE_API_KEY is configured")
+    videos = []
+    page_token = ""
+    while len(videos) < 200:
+        params = {"part": "snippet", "playlistId": list_id, "maxResults": 50, "key": YOUTUBE_API_KEY}
+        if page_token:
+            params["pageToken"] = page_token
+        try:
+            with urlopen(UrlRequest(f"https://www.googleapis.com/youtube/v3/playlistItems?{urlencode(params)}"), timeout=8) as response:
+                payload = json.load(response)
+        except Exception as error:
+            raise HTTPException(status_code=502, detail="YouTube playlist import is temporarily unavailable") from error
+        for item in payload.get("items", []):
+            snippet = item.get("snippet", {})
+            resource_video_id = snippet.get("resourceId", {}).get("videoId")
+            if not resource_video_id:
+                continue
+            videos.append({
+                "video_id": resource_video_id,
+                "title": snippet.get("title", "Untitled"),
+                "artist": snippet.get("videoOwnerChannelTitle") or snippet.get("channelTitle", "YouTube selection"),
+                "thumbnail": snippet.get("thumbnails", {}).get("medium", {}).get("url") or f"https://i.ytimg.com/vi/{resource_video_id}/hqdefault.jpg",
+            })
+        page_token = payload.get("nextPageToken")
+        if not page_token:
+            break
+    return videos
+
+
 def queue_for(session_id: int, guest_id: str | None = None) -> list[dict]:
     with connection() as database:
         rows = database.execute(
@@ -260,7 +322,7 @@ def session_payload(session: sqlite3.Row, guest_id: str | None = None) -> dict:
         playing = database.execute(
             "SELECT * FROM queue_items WHERE session_id = ? AND state = 'playing' LIMIT 1", (session["id"],)
         ).fetchone()
-    return {"playing": dict(playing) if playing else None, "queue": queue_for(session["id"], guest_id), "fallback_playlist": session["fallback_playlist"], "playback_paused": bool(session["playback_paused"]), "failure_count": session["failure_count"], "playback_owner": session["playback_owner"], "playback_state": session["playback_state"], "playback_position": session["playback_position"], "playback_volume": session["playback_volume"], "playback_revision": session["playback_revision"]}
+    return {"playing": dict(playing) if playing else None, "queue": queue_for(session["id"], guest_id), "playback_paused": bool(session["playback_paused"]), "failure_count": session["failure_count"], "playback_owner": session["playback_owner"], "playback_state": session["playback_state"], "playback_position": session["playback_position"], "playback_volume": session["playback_volume"], "playback_revision": session["playback_revision"]}
 
 
 def host_session(token: str, oidc_subject: str | None = None) -> sqlite3.Row:
@@ -366,17 +428,28 @@ def add_song(response: Response, token: str, request: SongRequest, guest_id: str
     guest_id = guest_id or secrets.token_urlsafe(18)
     identifier = video_id(request.url)
     with connection() as database:
-        existing = database.execute(
-            "SELECT id FROM queue_items WHERE session_id = ? AND video_id = ? AND state IN ('queued', 'playing')",
-            (session["id"], identifier),
-        ).fetchone()
-        if not existing:
-            database.execute(
-                "INSERT INTO queue_items(session_id, video_id, title, artist, thumbnail, submitted_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (session["id"], identifier, request.title, request.artist, f"https://i.ytimg.com/vi/{identifier}/hqdefault.jpg", now()),
-            )
+        item_id, state, created = enqueue_video(database, session["id"], identifier, request.title, request.artist, f"https://i.ytimg.com/vi/{identifier}/hqdefault.jpg")
+        if created:
+            database.execute("INSERT INTO votes(queue_item_id, guest_id) VALUES (?, ?)", (item_id, guest_id))
+        elif state == "queued":
+            try:
+                database.execute("INSERT INTO votes(queue_item_id, guest_id) VALUES (?, ?)", (item_id, guest_id))
+            except sqlite3.IntegrityError:
+                pass
     response.set_cookie("guest_id", guest_id, httponly=True, samesite="lax")
     return {"ok": True, "guest_id": guest_id, "queue": queue_for(session["id"], guest_id)}
+
+
+
+@app.post("/api/host/{token}/playlist")
+def add_playlist(token: str, request: PlaylistRequest, google_subject: str | None = Cookie(default=None, alias="oidc_subject")) -> dict:
+    session = host_session(token, google_subject)
+    list_id = playlist_id(request.url)
+    videos = fetch_playlist_videos(list_id)
+    with connection() as database:
+        for video in videos:
+            enqueue_video(database, session["id"], video["video_id"], video["title"], video["artist"], video["thumbnail"])
+    return session_payload(host_session(token, google_subject))
 
 
 @app.post("/api/sessions/{token}/queue/{item_id}/vote")
@@ -394,24 +467,6 @@ def vote(response: Response, token: str, item_id: int, guest_id: str | None = Co
             database.execute("DELETE FROM votes WHERE queue_item_id = ? AND guest_id = ?", (item_id, guest_id))
     response.set_cookie("guest_id", guest_id, httponly=True, samesite="lax")
     return {"ok": True, "guest_id": guest_id, "queue": queue_for(session["id"], guest_id)}
-
-
-@app.post("/api/host/{token}/fallback")
-def set_fallback(token: str, request: FallbackRequest, google_subject: str | None = Cookie(default=None, alias="oidc_subject")) -> dict:
-    session = host_session(token, google_subject)
-    with connection() as database:
-        database.execute("UPDATE sessions SET fallback_playlist = ?, last_host_seen = ? WHERE id = ?", (request.playlist_url or None, now(), session["id"]))
-    return session_payload(host_session(token, google_subject))
-
-
-@app.post("/api/host/{token}/fallback/skip")
-def skip_fallback(token: str, google_subject: str | None = Cookie(default=None, alias="oidc_subject")) -> dict:
-    session = host_session(token, google_subject)
-    if not session["fallback_playlist"]:
-        raise HTTPException(status_code=404, detail="Fallback playlist is not configured")
-    with connection() as database:
-        database.execute("UPDATE sessions SET playback_revision = playback_revision + 1, last_host_seen = ? WHERE id = ?", (now(), session["id"]))
-    return session_payload(host_session(token, google_subject))
 
 
 @app.post("/api/host/{token}/queue/{item_id}/play")

@@ -113,10 +113,12 @@ For production, register the exact HTTPS callback URL used by the public deploym
 - YouTube and YouTube Music URL normalization by video ID
 - Duplicate active submissions merge into one queue item
 - One upvote per guest per active item, with a second click removing the vote
+- Individually requested songs are auto-voted by the requester, ranking above bulk-imported playlist items
+- Bulk playlist import adds every video from a YouTube playlist to the queue with zero votes so guests can still vote them up
 - Deterministic vote ranking with submission-time tie-breaking
 - Kiosk read endpoint and QR code endpoint
-- Host playback-state controls and fallback playlist configuration
-- Ranked queue auto-advancement and shuffled fallback playlist playback
+- Host playback-state controls
+- Ranked queue auto-advancement
 - Provider failure pause after three failures within ten minutes
 - Background cleanup of expired sessions and anonymous vote data
 - Dedicated kiosk view with guest-link QR code

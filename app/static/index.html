@@ -35,8 +35,7 @@
       <div id="player"></div>
       <div class="controls"><button id="pause">PAUSE</button><button id="stop">STOP</button><button id="resume">RESUME</button><button id="skip-current">SKIP</button><label class="volume">VOLUME <input id="volume" type="range" min="0" max="100" value="80"></label></div>
       <p id="host-status" class="status" role="status"></p>
-      <label>Fallback playlist <input id="fallback" placeholder="YouTube playlist URL"></label>
-      <button id="save-fallback">Save fallback</button>
+      <form id="playlist-form"><input id="playlist-url" required placeholder="YouTube playlist URL"><button>Add whole playlist</button></form>
       <h3>QUEUE CONTROL</h3><ol id="host-queue"></ol>
       <div id="host-links" class="links">
         <h3>SHARE THIS SESSION</h3>
@@ -51,6 +50,6 @@
       <div class="kiosk-grid"><div class="kiosk-stage"><div id="kiosk-video" class="kiosk-video"></div></div><div class="kiosk-queue"><h3>UP NEXT</h3><ol id="kiosk-queue"></ol></div></div>
     </section>
   </main>
-  <script src="/static/app.js?v=10"></script>
+  <script src="/static/app.js?v=11"></script>
 </body>
 </html>

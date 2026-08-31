@@ -1,5 +1,6 @@
 import importlib
 import io
+import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
@@ -24,19 +25,119 @@ def test_queue_votes_and_completion_advance(tmp_path, monkeypatch):
         assert len(duplicate["queue"]) == 2
 
         item_id = first["queue"][0]["id"]
-        client.post(f"/api/sessions/{guest_token}/queue/{item_id}/vote")
-        voted = client.get(f"/api/sessions/{guest_token}").json()
-        assert voted["queue"][0]["voted"] is True
-        toggled = client.post(f"/api/sessions/{guest_token}/queue/{item_id}/vote").json()
-        assert toggled["queue"][0]["votes"] == 0
+        assert first["queue"][0]["votes"] == 1
+        assert first["queue"][0]["voted"] is True
 
-        client.post(f"/api/sessions/{guest_token}/queue/{item_id}/vote")
+        removed = client.post(f"/api/sessions/{guest_token}/queue/{item_id}/vote").json()
+        removed_item = next(item for item in removed["queue"] if item["id"] == item_id)
+        assert removed_item["votes"] == 0
+        assert removed_item["voted"] is False
+
+        restored = client.post(f"/api/sessions/{guest_token}/queue/{item_id}/vote").json()
+        restored_item = next(item for item in restored["queue"] if item["id"] == item_id)
+        assert restored_item["votes"] == 1
+        assert restored_item["voted"] is True
+
         client.post(f"/api/host/{host_token}/queue/{item_id}/play")
         completed = client.post(f"/api/host/{host_token}/queue/{item_id}/complete").json()
         assert completed["playing"]["video_id"] == "second"
 
         next_state = client.post(f"/api/host/{host_token}/next").json()
         assert next_state["playing"] is None
+
+
+def test_adding_existing_queued_song_votes_for_other_guest(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.db"))
+    import app.main as main
+
+    main.DATABASE_PATH = str(tmp_path / "test.db")
+    importlib.reload(main)
+    with TestClient(main.app) as client:
+        session = client.post("/api/sessions").json()
+        guest_token = session["guest_url"].rsplit("/", 1)[-1]
+
+        added = client.post(f"/api/sessions/{guest_token}/songs", json={"url": "https://youtu.be/shared", "title": "Shared"}).json()
+        assert added["queue"][0]["votes"] == 1
+
+        with TestClient(main.app) as other_client:
+            resubmitted = other_client.post(f"/api/sessions/{guest_token}/songs", json={"url": "https://youtu.be/shared", "title": "Shared"}).json()
+            item = next(item for item in resubmitted["queue"] if item["video_id"] == "shared")
+            assert item["votes"] == 2
+            assert item["voted"] is True
+
+            repeated = other_client.post(f"/api/sessions/{guest_token}/songs", json={"url": "https://youtu.be/shared", "title": "Shared"}).json()
+            repeated_item = next(item for item in repeated["queue"] if item["video_id"] == "shared")
+            assert repeated_item["votes"] == 2
+
+
+def test_song_can_be_requested_again_after_it_already_played(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.db"))
+    import app.main as main
+
+    main.DATABASE_PATH = str(tmp_path / "test.db")
+    importlib.reload(main)
+    with TestClient(main.app) as client:
+        session = client.post("/api/sessions").json()
+        guest_token = session["guest_url"].rsplit("/", 1)[-1]
+        host_token = session["host_url"].rsplit("/", 1)[-1]
+
+        first_add = client.post(f"/api/sessions/{guest_token}/songs", json={"url": "https://youtu.be/replay", "title": "Replay"}).json()
+        item_id = first_add["queue"][0]["id"]
+        client.post(f"/api/host/{host_token}/queue/{item_id}/play")
+        client.post(f"/api/host/{host_token}/queue/{item_id}/complete")
+
+        removed_add = client.post(f"/api/sessions/{guest_token}/songs", json={"url": "https://youtu.be/removable", "title": "Removable"}).json()
+        removed_item_id = removed_add["queue"][0]["id"]
+        client.post(f"/api/host/{host_token}/queue/{removed_item_id}/remove")
+
+        replayed = client.post(f"/api/sessions/{guest_token}/songs", json={"url": "https://youtu.be/replay", "title": "Replay"}).json()
+        re_removed = client.post(f"/api/sessions/{guest_token}/songs", json={"url": "https://youtu.be/removable", "title": "Removable"}).json()
+
+        assert any(item["video_id"] == "replay" and item["votes"] == 1 for item in replayed["queue"])
+        assert any(item["video_id"] == "removable" and item["votes"] == 1 for item in re_removed["queue"])
+
+
+def test_playlist_bulk_add_uses_zero_votes_and_ranks_below_requests(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+    import app.main as main
+
+    main.DATABASE_PATH = str(tmp_path / "test.db")
+    main.YOUTUBE_API_KEY = "test-key"
+    importlib.reload(main)
+
+    class FakeResponse(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def fake_urlopen(request, timeout):
+        assert "playlistItems" in request.full_url
+        assert timeout == 8
+        payload = json.dumps({"items": [
+            {"snippet": {"resourceId": {"videoId": "bulk-one"}, "title": "Bulk One", "channelTitle": "Channel"}},
+            {"snippet": {"resourceId": {"videoId": "bulk-two"}, "title": "Bulk Two", "channelTitle": "Channel"}},
+        ]}).encode()
+        return FakeResponse(payload)
+
+    monkeypatch.setattr(main, "urlopen", fake_urlopen)
+    with TestClient(main.app) as client:
+        session = client.post("/api/sessions").json()
+        guest_token = session["guest_url"].rsplit("/", 1)[-1]
+        host_token = session["host_url"].rsplit("/", 1)[-1]
+
+        bulk = client.post(f"/api/host/{host_token}/playlist", json={"url": "https://www.youtube.com/playlist?list=abc123"}).json()
+        assert len(bulk["queue"]) == 2
+        assert all(item["votes"] == 0 for item in bulk["queue"])
+
+        requested = client.post(f"/api/sessions/{guest_token}/songs", json={"url": "https://youtu.be/requested", "title": "Requested"}).json()
+        assert requested["queue"][0]["video_id"] == "requested"
+        assert requested["queue"][0]["votes"] == 1
+
+        forbidden = client.post(f"/api/sessions/{guest_token}/playlist", json={"url": "https://www.youtube.com/playlist?list=abc123"})
+        assert forbidden.status_code == 404
 
 
 def test_session_can_end(tmp_path, monkeypatch):
@@ -176,28 +277,6 @@ def test_transport_position_heartbeat_does_not_change_revision(tmp_path, monkeyp
     assert heartbeat["playback_revision"] == started["playback_revision"]
 
 
-def test_fallback_playlist_can_be_skipped(tmp_path, monkeypatch):
-    database_path = tmp_path / "test.db"
-    monkeypatch.setenv("DATABASE_PATH", str(database_path))
-    import app.main as main
-
-    main.DATABASE_PATH = str(database_path)
-    importlib.reload(main)
-    with TestClient(main.app) as client:
-        session = client.post("/api/sessions").json()
-        host_token = session["host_url"].rsplit("/", 1)[-1]
-        configured = client.post(
-            f"/api/host/{host_token}/fallback",
-            json={"playlist_url": "https://www.youtube.com/playlist?list=playlist123"},
-        ).json()
-        skipped = client.post(f"/api/host/{host_token}/fallback/skip").json()
-        missing = client.post(f"/api/host/{host_token}/fallback/skip")
-
-    assert configured["fallback_playlist"].endswith("playlist123")
-    assert skipped["playback_revision"] == configured["playback_revision"] + 1
-    assert missing.status_code == 200
-
-
 def test_websocket_preserves_guest_vote_state(tmp_path, monkeypatch):
     database_path = tmp_path / "test.db"
     monkeypatch.setenv("DATABASE_PATH", str(database_path))
@@ -209,8 +288,6 @@ def test_websocket_preserves_guest_vote_state(tmp_path, monkeypatch):
         session = client.post("/api/sessions").json()
         guest_token = session["guest_url"].rsplit("/", 1)[-1]
         client.post(f"/api/sessions/{guest_token}/songs", json={"url": "https://youtu.be/vote-state", "title": "Vote state"})
-        queue_item = client.get(f"/api/sessions/{guest_token}").json()["queue"][0]
-        client.post(f"/api/sessions/{guest_token}/queue/{queue_item['id']}/vote")
         with client.websocket_connect(f"/ws/{guest_token}") as websocket:
             snapshot = websocket.receive_json()
             assert snapshot["queue"][0]["voted"] is True
