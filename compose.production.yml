@@ -1,0 +1,13 @@
+services:
+  music-together:
+    environment:
+      - VIRTUAL_HOST=music-together.mv-angelbachtal.de
+      - LETSENCRYPT_HOST=music-together.mv-angelbachtal.de
+    ports: !override []
+    networks:
+      proxy:
+      default:
+
+networks:
+  proxy:
+    external: true
