@@ -2,6 +2,12 @@ name: music-together
 working_dir: .
 environment:
   PLAYBACK_OWNER: kiosk
+  PUBLIC_BASE_URL: https://music-together.mv-angelbachtal.de
+  OIDC_ISSUER: https://id.mv-angelbachtal.de/application/o/music-together/
+  OIDC_AUTHORIZATION_URL: https://id.mv-angelbachtal.de/application/o/authorize/
+  OIDC_TOKEN_URL: https://id.mv-angelbachtal.de/application/o/token/
+  OIDC_USERINFO_URL: https://id.mv-angelbachtal.de/application/o/userinfo/
+  REQUIRE_OIDC_AUTH: 1
 compose_files:
   - compose.yml
   - compose.production.yml
