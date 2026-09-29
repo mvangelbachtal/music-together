@@ -7,7 +7,7 @@ dependencies = [
 	"fastapi==0.115.6",
 	"uvicorn[standard]==0.34.0",
 	"qrcode==8.0",
-	"Pillow==11.1.0",
+	"Pillow==12.3.0",
 ]
 
 [dependency-groups]
