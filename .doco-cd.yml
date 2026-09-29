@@ -7,6 +7,7 @@ environment:
   OIDC_AUTHORIZATION_URL: https://id.mv-angelbachtal.de/application/o/authorize/
   OIDC_TOKEN_URL: https://id.mv-angelbachtal.de/application/o/token/
   OIDC_USERINFO_URL: https://id.mv-angelbachtal.de/application/o/userinfo/
+  OIDC_REDIRECT_URI: https://music-together.mv-angelbachtal.de/auth/callback
   REQUIRE_OIDC_AUTH: 1
 compose_files:
   - compose.yml
