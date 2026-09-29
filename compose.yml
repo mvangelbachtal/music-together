@@ -4,7 +4,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/data
+      - data:/data
     environment:
       DATABASE_PATH: /data/music-together.db
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
@@ -21,3 +21,6 @@ services:
       SPONSORBLOCK_ENABLED: ${SPONSORBLOCK_ENABLED:-1}
       SPONSORBLOCK_CATEGORIES: ${SPONSORBLOCK_CATEGORIES:-sponsor,selfpromo,interaction,intro,outro,preview,filler,music_offtopic}
       PLAYBACK_OWNER: ${PLAYBACK_OWNER:-host}
+
+volumes:
+  data:

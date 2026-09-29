@@ -1,5 +1,7 @@
 name: music-together
 working_dir: .
+environment:
+  PLAYBACK_OWNER: kiosk
 compose_files:
   - compose.yml
   - compose.production.yml
