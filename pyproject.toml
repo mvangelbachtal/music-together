@@ -14,7 +14,7 @@ dependencies = [
 dev = [
 	"pre-commit==4.6.2",
 	"commitizen==4.18.0",
-	"ruff==0.16.5",
+	"ruff==0.16.10",
 	"pytest==9.0.3",
 	"httpx==0.28.1",
 ]
