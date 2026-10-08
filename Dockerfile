@@ -1,6 +1,6 @@
 FROM python:3.14-slim AS builder
 
-COPY --from=ghcr.io/astral-sh/uv:0.12.23 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.24 /uv /uvx /bin/
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
