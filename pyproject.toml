@@ -16,7 +16,7 @@ dev = [
 	"commitizen==4.19.3",
 	"ruff==0.16.10",
 	"pytest==9.1.1",
-	"httpx==0.28.1",
+	"httpx==0.29.0",
 ]
 
 [tool.ruff]
